@@ -1,1 +1,16 @@
-{  "name": "superflix-addon",  "version": "1.0.0",  "description": "Addon Stremio para filmes, séries, animes e doramas usando SuperFlix API",  "main": "addon.js",  "scripts": {    "start": "node addon.js"  },  "author": "Seu Nome",  "license": "MIT",  "dependencies": {    "node-fetch": "",    "stremio-addon-sdk": "^"  },  "type": "module"}
+{
+  "name": "fortal-addon",
+  "version": "1.0.0",
+  "description": "Addon Stremio para filmes, séries, animes e doramas usando SuperFlix API",
+  "main": "index.js",
+  "scripts": {
+    "start": "node addon.js"
+  },
+  "author": "Seu Nome",
+  "license": "MIT",
+  "dependencies": {
+    "node-fetch": "",
+    "stremio-addon-sdk": ""
+  },
+  "type": "module"
+}
