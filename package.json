@@ -10,7 +10,8 @@
   "license": "MIT",
   "dependencies": {
     "node-fetch": "",
-    "stremio-addon-sdk": ""
+    "stremio-addon-sdk": "",
+    "express": ""
   },
   "type": "module"
 }
