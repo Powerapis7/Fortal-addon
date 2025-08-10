@@ -1,129 +1,102 @@
-import pkg from "stremio-addon-sdk";
-const { addonBuilder, serveHTTP } = pkg;
-import fetch from "node-fetch";
+import { addonBuilder } from 'stremio-addon-sdk';
+import fetch from 'node-fetch';
 
-// ... resto do código continua igual
-
-const API_URL = "https://superflixapi.digital";
+const API_KEY = '12a263eb78c5a66bf238a09bf48a413b'; // sua chave TMDb válida aqui
 
 const manifest = {
-  id: "br.superflix",
-  version: "1.0.0",
-  name: "SuperFlix",
-  description: "Addon para filmes, séries, animes e doramas",
-  resources: ["catalog", "meta", "stream"],
-  types: ["movie", "series", "anime", "serie"],
+  id: 'org.worldecletix.superflix',
+  version: '1.0.0',
+  name: 'World Ecletix Superflix',
+  description: 'Addon TMDb + streaming Superflix',
+  resources: ['catalog', 'meta'],
+  types: ['movie', 'series'],
   catalogs: [
-    { type: "movie", id: "superflix_movies", name: "Filmes" },
-    { type: "series", id: "superflix_series", name: "Séries" },
-    { type: "anime", id: "superflix_animes", name: "Animes" },
-    { type: "serie", id: "superflix_doramas", name: "Doramas" }
+    { type: 'movie', id: 'tmdb_movies' },
+    { type: 'series', id: 'tmdb_series' }
   ],
 };
 
 const builder = new addonBuilder(manifest);
 
-// Busca lista dos conteúdos (filme, serie, anime, dorama)
-async function fetchContent(category) {
-  try {
-    const res = await fetch(`${API_URL}/lista?category=${category}&format=json`);
-    const data = await res.json();
-    return data.map(item => ({
-      id: item.id.toString(),
-      type: category === "serie" ? "series" : category,
-      name: item.title || item.name || item.original_title || "Sem nome",
-      poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : "",
-      background: item.backdrop_path ? `https://image.tmdb.org/t/p/w500${item.backdrop_path}` : "",
-      description: item.overview || "Sem descrição disponível.",
-    }));
-  } catch (error) {
-    console.error("Erro fetchContent:", error);
-    return [];
-  }
-}
+// Catalog handler para busca filmes e séries
+builder.defineCatalogHandler(async ({ type, extra }) => {
+  const searchQuery = extra && extra.search;
+  if (!searchQuery) return { metas: [] };
 
-// Busca metadados detalhados pelo id
-async function fetchMeta(id, type) {
+  const apiType = type === 'series' ? 'tv' : 'movie';
+
+  const url = `https://api.themoviedb.org/3/search/${apiType}?api_key=${API_KEY}&language=pt-BR&query=${encodeURIComponent(searchQuery)}&page=1&include_adult=false`;
+
   try {
-    const res = await fetch(`${API_URL}/${type}/${id}`);
+    const res = await fetch(url);
     const data = await res.json();
+
+    if (!data.results || data.results.length === 0) return { metas: [] };
+
+    const metas = data.results
+      .filter(item => item.poster_path)
+      .map(item => ({
+        id: `${apiType}_${item.id}`,
+        type: type,
+        name: item.title || item.name,
+        poster: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
+        posterShape: 'poster',
+        description: item.overview,
+        released: item.release_date || item.first_air_date,
+        imdbRating: item.vote_average,
+      }));
+
+    return { metas };
+  } catch (e) {
+    return { metas: [] };
+  }
+});
+
+// Meta handler para detalhes + links streaming Superflix
+builder.defineMetaHandler(async ({ type, id }) => {
+  const [mediaType, tmdbId] = id.split('_');
+  if (!tmdbId) return null;
+
+  const urlApi = `https://api.themoviedb.org/3/${mediaType === 'series' ? 'tv' : 'movie'}/${tmdbId}?api_key=${API_KEY}&language=pt-BR`;
+  try {
+    const res = await fetch(urlApi);
+    const data = await res.json();
+
+    if (!data) return null;
+
+    // Monta os streams com links do Superflix
+    let streams = [];
+    if (mediaType === 'movie') {
+      streams.push({
+        title: 'Superflix',
+        url: `https://superflixapi.ps/filme/${tmdbId}`,
+        externalUrl: true,
+      });
+    } else if (mediaType === 'series') {
+      // Link padrão temporada 1 episódio 1
+      streams.push({
+        title: 'Superflix',
+        url: `https://superflixapi.ps/serie/${tmdbId}/1/1`,
+        externalUrl: true,
+      });
+    }
+
     return {
-      id: data.id.toString(),
-      type: type === "serie" ? "series" : type,
-      name: data.title || data.name || data.original_title || "Sem nome",
-      poster: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : "",
-      background: data.backdrop_path ? `https://image.tmdb.org/t/p/w500${data.backdrop_path}` : "",
-      description: data.overview || "Sem descrição disponível.",
+      id,
+      type: mediaType === 'series' ? 'series' : 'movie',
+      name: data.title || data.name,
+      description: data.overview,
+      released: data.release_date || data.first_air_date,
+      poster: `https://image.tmdb.org/t/p/w500${data.poster_path}`,
+      background: `https://image.tmdb.org/t/p/original${data.backdrop_path}`,
+      imdbRating: data.vote_average,
       genres: data.genres ? data.genres.map(g => g.name) : [],
-      year: data.release_date ? data.release_date.slice(0,4) : data.first_air_date ? data.first_air_date.slice(0,4) : "N/A",
+      streams,
     };
-  } catch (error) {
-    console.error("Erro fetchMeta:", error);
+  } catch (e) {
     return null;
   }
-}
-
-// Busca streams para reprodução
-async function fetchStreams(id) {
-  try {
-    const res = await fetch(`${API_URL}/stape/${id}`);
-    const data = await res.json();
-    if(!data.stream_url) return [];
-    return [{
-      title: data.title || "Stream",
-      url: data.stream_url,
-      isM3U8: true,
-    }];
-  } catch (error) {
-    console.error("Erro fetchStreams:", error);
-    return [];
-  }
-}
-
-// Handlers
-
-builder.defineCatalogHandler(async ({ type, search }) => {
-  if (search) {
-    // Busca por termo usando /busca endpoint
-    try {
-      const res = await fetch(`${API_URL}/busca?search=${encodeURIComponent(search)}&format=json`);
-      const data = await res.json();
-      const metas = data.map(item => ({
-        id: item.id.toString(),
-        type: item.type === "serie" ? "series" : item.type,
-        name: item.title || item.name || "Sem nome",
-        poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : "",
-        description: item.overview || "Sem descrição",
-      }));
-      return { metas };
-    } catch {
-      return { metas: [] };
-    }
-  } else {
-    let category;
-    switch (type) {
-      case "movie": category = "movie"; break;
-      case "series": category = "serie"; break;
-      case "anime": category = "anime"; break;
-      case "serie": category = "serie"; break; // doramas também usam 'serie' na API
-      default: return { metas: [] };
-    }
-    const metas = await fetchContent(category);
-    return { metas };
-  }
 });
 
-builder.defineMetaHandler(async ({ id, type }) => {
-  const meta = await fetchMeta(id, type === "series" ? "serie" : type);
-  if (!meta) return { meta: null };
-  return { meta };
-});
-
-builder.defineStreamHandler(async ({ id }) => {
-  const streams = await fetchStreams(id);
-  return { streams };
-});
-
-// Start server na porta 7000
-serveHTTP(builder.getInterface(), { port: 7000 });
-console.log("Addon SuperFlix rodando em http://localhost:7000/manifest.json");
+export const addon = builder.getInterface();
+export const manifestJson = manifest;
