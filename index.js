@@ -1,32 +1,33 @@
 import express from 'express';
+import fetch from 'node-fetch'; // se não tiver instalado, use: npm install node-fetch
 import { addonBuilder } from 'stremio-addon-sdk';
-import fetch from 'node-fetch';
 
 const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
-const IMAGEM_PADRAO = 'https://files.catbox.moe/jwtaje.jpg';
 
 const manifest = {
-  id: 'org.fortal.play',
+  id: 'org.test.fortalplay',
   version: '1.0.0',
-  name: 'fortal play',
-  description: 'Addon TMDb + streaming fortal play',
+  name: 'Fortal Play',
+  description: 'Addon Fortal Play com busca TMDb e streaming via Superflix',
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
   catalogs: [
     { type: 'movie', id: 'tmdb_movies' },
     { type: 'series', id: 'tmdb_series' }
   ],
+  catalogs: [],
 };
 
 const builder = new addonBuilder(manifest);
 
+// Handler da busca (catalog)
 builder.defineCatalogHandler(async ({ type, extra }) => {
-  const searchQuery = extra && extra.search;
-  if (!searchQuery) return { metas: [] };
+  if (!extra || !extra.search) return { metas: [] };
 
-  const apiType = type === 'series' ? 'tv' : 'movie';
+  const query = extra.search;
+  const tmdbType = type === 'series' ? 'tv' : 'movie';
 
-  const url = `https://api.themoviedb.org/3/search/${apiType}?api_key=${API_KEY}&language=pt-BR&query=${encodeURIComponent(searchQuery)}&page=1&include_adult=false`;
+  const url = `https://api.themoviedb.org/3/search/${tmdbType}?api_key=${API_KEY}&language=pt-BR&query=${encodeURIComponent(query)}&page=1`;
 
   try {
     const res = await fetch(url);
@@ -35,16 +36,14 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
     if (!data.results || data.results.length === 0) return { metas: [] };
 
     const metas = data.results.map(item => ({
-      id: `${apiType}_${item.id}`,
-      type: type,
+      id: `${tmdbType}_${item.id}`,
+      type,
       name: item.title || item.name,
-      poster: item.poster_path
-        ? `https://image.tmdb.org/t/p/w500${item.poster_path}`
-        : IMAGEM_PADRAO,
-      posterShape: 'poster',
+      poster: 'https://files.catbox.moe/jwtaje.jpg', // Sua imagem fixa aqui
       description: item.overview,
       released: item.release_date || item.first_air_date,
       imdbRating: item.vote_average,
+      posterShape: 'poster',
     }));
 
     return { metas };
@@ -53,6 +52,7 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
   }
 });
 
+// Handler do meta e streams
 builder.defineMetaHandler(async ({ type, id }) => {
   const [mediaType, tmdbId] = id.split('_');
   if (!tmdbId) return null;
@@ -62,18 +62,16 @@ builder.defineMetaHandler(async ({ type, id }) => {
     const res = await fetch(urlApi);
     const data = await res.json();
 
-    if (!data) return null;
-
     let streams = [];
     if (mediaType === 'movie') {
       streams.push({
-        title: 'Superflix',
+        title: 'Fortal Play',
         url: `https://superflixapi.ps/filme/${tmdbId}`,
         externalUrl: true,
       });
     } else if (mediaType === 'series') {
       streams.push({
-        title: 'Superflix',
+        title: 'Fortal Play',
         url: `https://superflixapi.ps/serie/${tmdbId}/1/1`,
         externalUrl: true,
       });
@@ -85,12 +83,8 @@ builder.defineMetaHandler(async ({ type, id }) => {
       name: data.title || data.name,
       description: data.overview,
       released: data.release_date || data.first_air_date,
-      poster: data.poster_path
-        ? `https://image.tmdb.org/t/p/w500${data.poster_path}`
-        : IMAGEM_PADRAO,
-      background: data.backdrop_path
-        ? `https://image.tmdb.org/t/p/original${data.backdrop_path}`
-        : IMAGEM_PADRAO,
+      poster: 'https://files.catbox.moe/jwtaje.jpg', // imagem fixa
+      background: data.backdrop_path ? `https://image.tmdb.org/t/p/original${data.backdrop_path}` : null,
       imdbRating: data.vote_average,
       genres: data.genres ? data.genres.map(g => g.name) : [],
       streams,
@@ -101,20 +95,17 @@ builder.defineMetaHandler(async ({ type, id }) => {
 });
 
 const app = express();
-
 const addonInterface = builder.getInterface();
 
-// Serve manifest.json no /manifest.json
 app.get('/manifest.json', (req, res) => {
   res.json(manifest);
 });
 
-// Serve o addon na rota raiz
 app.use('/', (req, res) => {
   addonInterface(req, res);
 });
 
 const PORT = 3000;
 app.listen(PORT, () => {
-  console.log(`Addon rodando em http://localhost:${PORT}/manifest.json`);
+  console.log(`Addon Fortal Play rodando em http://localhost:${PORT}/manifest.json`);
 });
