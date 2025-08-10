@@ -1,15 +1,15 @@
+import express from 'express';
 import { addonBuilder } from 'stremio-addon-sdk';
 import fetch from 'node-fetch';
 
-const API_KEY = '12a263eb78c5a66bf238a09bf48a413b'; // sua chave TMDb válida aqui
-
-const IMAGEM_PADRAO = 'https://files.catbox.moe/jwtaje.jpg'; // Exemplo: imagem padrão genérica
+const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
+const IMAGEM_PADRAO = 'https://i.imgur.com/UH3IPXw.png';
 
 const manifest = {
-  id: 'org.fortal.play',
+  id: 'org.worldecletix.cine',
   version: '1.0.0',
-  name: 'fortal play', // Troque aqui o nome do addon
-  description: 'Addon TMDb + streaming fortalplay',
+  name: 'World Ecletix Cine',
+  description: 'Addon TMDb + streaming Superflix',
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
   catalogs: [
@@ -20,7 +20,6 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// Catalog handler: busca filmes ou séries
 builder.defineCatalogHandler(async ({ type, extra }) => {
   const searchQuery = extra && extra.search;
   if (!searchQuery) return { metas: [] };
@@ -54,7 +53,6 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
   }
 });
 
-// Meta handler: detalhes + links de streaming
 builder.defineMetaHandler(async ({ type, id }) => {
   const [mediaType, tmdbId] = id.split('_');
   if (!tmdbId) return null;
@@ -76,7 +74,7 @@ builder.defineMetaHandler(async ({ type, id }) => {
     } else if (mediaType === 'series') {
       streams.push({
         title: 'Superflix',
-        url: `https://superflixapi.ps/serie/${tmdbId}/1/1`, // temporada 1 episódio 1 fixos
+        url: `https://superflixapi.ps/serie/${tmdbId}/1/1`,
         externalUrl: true,
       });
     }
@@ -102,5 +100,21 @@ builder.defineMetaHandler(async ({ type, id }) => {
   }
 });
 
-export const addon = builder.getInterface();
-export const manifestJson = manifest;
+const app = express();
+
+const addonInterface = builder.getInterface();
+
+// Serve manifest.json no /manifest.json
+app.get('/manifest.json', (req, res) => {
+  res.json(manifest);
+});
+
+// Serve o addon na rota raiz
+app.use('/', (req, res) => {
+  addonInterface(req, res);
+});
+
+const PORT = 3000;
+app.listen(PORT, () => {
+  console.log(`Addon rodando em http://localhost:${PORT}/manifest.json`);
+});
