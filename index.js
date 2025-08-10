@@ -1,21 +1,21 @@
-// Importações necessárias
-import { addonBuilder, serveHTTP } from 'stremio-addon-sdk';
+// --- CORREÇÃO NA IMPORTAÇÃO ---
+// Usamos 'require' porque 'stremio-addon-sdk' é um módulo CommonJS.
+import sdk from 'stremio-addon-sdk';
+const { addonBuilder, serveHTTP } = sdk;
+// -----------------------------
+
 import fetch from 'node-fetch';
 
 // Sua chave da API do TMDb
 const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
 
 // --- MANIFEST ---
-// Adicionado o logo e incrementada a versão.
 const manifest = {
   id: 'org.fortal.play',
-  version: '1.0.2', // Versão atualizada
+  version: '1.0.3', // Incrementei a versão novamente
   name: 'Fortal Play',
   description: 'Addon de busca no TMDb com links externos para streaming.',
-  
-  // Ícone do addon
   logo: 'https://files.catbox.moe/jwtaje.jpg',
-
   resources: ['catalog', 'meta', 'stream'],
   types: ['movie', 'series'],
   catalogs: [
@@ -35,6 +35,7 @@ const manifest = {
 };
 
 // --- BUILDER E HANDLERS ---
+// O resto do código permanece exatamente o mesmo.
 const builder = new addonBuilder(manifest);
 
 // Handler de Catálogo (Busca)
@@ -52,7 +53,7 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
     const data = await res.json();
 
     const metas = data.results
-      .filter(item => item.poster_path) // Filtra resultados sem poster para uma UI mais limpa
+      .filter(item => item.poster_path)
       .map(item => ({
         id: `tmdb:${item.id}`,
         type,
@@ -101,7 +102,6 @@ builder.defineStreamHandler(async ({ type, id }) => {
   const [_, tmdbId] = id.split(':');
   if (!tmdbId) return Promise.resolve({ streams: [] });
 
-  // AVISO: A URL do Superflix é um palpite. Pode não funcionar.
   let streamUrl;
   if (type === 'movie') {
     streamUrl = `https://superflix.mov/filme/${tmdbId}`;
@@ -130,3 +130,4 @@ serveHTTP(builder.getInterface(), { port: PORT })
   .catch(err => {
     console.error('Erro ao iniciar o servidor:', err);
   });
+  
