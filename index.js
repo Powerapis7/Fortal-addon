@@ -1,10 +1,7 @@
-// --- CORREÇÃO NA IMPORTAÇÃO ---
 // Usamos 'require' porque 'stremio-addon-sdk' é um módulo CommonJS.
-import sdk from 'stremio-addon-sdk';
+const sdk = require('stremio-addon-sdk');
 const { addonBuilder, serveHTTP } = sdk;
-// -----------------------------
-
-import fetch from 'node-fetch';
+const fetch = require('node-fetch');
 
 // Sua chave da API do TMDb
 const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
@@ -12,9 +9,9 @@ const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
 // --- MANIFEST ---
 const manifest = {
   id: 'org.fortal.play',
-  version: '1.0.3', // Incrementei a versão novamente
+  version: '1.1.0', // Versão com a lógica de stream corrigida
   name: 'Fortal Play',
-  description: 'Addon de busca no TMDb com links externos para streaming.',
+  description: 'Addon de busca no TMDb com links para o Superflix.',
   logo: 'https://files.catbox.moe/jwtaje.jpg',
   resources: ['catalog', 'meta', 'stream'],
   types: ['movie', 'series'],
@@ -35,7 +32,6 @@ const manifest = {
 };
 
 // --- BUILDER E HANDLERS ---
-// O resto do código permanece exatamente o mesmo.
 const builder = new addonBuilder(manifest);
 
 // Handler de Catálogo (Busca)
@@ -53,7 +49,7 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
     const data = await res.json();
 
     const metas = data.results
-      .filter(item => item.poster_path)
+      .filter(item => item.poster_path) // Filtra resultados sem poster
       .map(item => ({
         id: `tmdb:${item.id}`,
         type,
@@ -97,26 +93,55 @@ builder.defineMetaHandler(async ({ type, id }) => {
   }
 });
 
-// Handler de Streams (Links)
+// Handler de Streams (Links) - Lógica corrigida com a API Superflix
 builder.defineStreamHandler(async ({ type, id }) => {
+  console.log(`Recebida requisição de stream para: ${id}`);
+  
   const [_, tmdbId] = id.split(':');
-  if (!tmdbId) return Promise.resolve({ streams: [] });
-
-  let streamUrl;
-  if (type === 'movie') {
-    streamUrl = `https://superflix.mov/filme/${tmdbId}`;
-  } else if (type === 'series') {
-    streamUrl = `https://superflix.mov/serie/${tmdbId}`;
+  if (!tmdbId) {
+    return Promise.resolve({ streams: [] });
   }
 
-  if (!streamUrl) return Promise.resolve({ streams: [] });
+  const superflixType = type === 'movie' ? 'filme' : 'serie';
 
-  const streams = [{
-    title: 'Assistir (Fonte Externa)',
-    externalUrl: streamUrl,
-  }];
+  try {
+    // 1. Buscar na API da Superflix usando o ID do TMDb para obter o 'slug'
+    const searchUrl = `https://superflixapi.digital/api/v1/search?tmdb_id=${tmdbId}&type=${superflixType}`;
+    console.log(`Buscando slug na Superflix API: ${searchUrl}`);
+    
+    const searchResponse = await fetch(searchUrl);
+    // Checa se a resposta da API foi bem sucedida
+    if (!searchResponse.ok) {
+        console.log(`Superflix API respondeu com status: ${searchResponse.status}`);
+        return Promise.resolve({ streams: [] });
+    }
+    const searchData = await searchResponse.json();
 
-  return Promise.resolve({ streams });
+    // 2. Verificar se a API encontrou o conteúdo e se temos um slug
+    if (!searchData || !searchData.slug) {
+      console.log(`Conteúdo com TMDb ID ${tmdbId} não encontrado na Superflix API.`);
+      return Promise.resolve({ streams: [] });
+    }
+
+    const slug = searchData.slug;
+    console.log(`Slug encontrado: ${slug}`);
+
+    // 3. Montar a URL final de streaming usando o slug
+    const streamUrl = `https://superflix.mov/${superflixType}/${slug}`;
+
+    // 4. Retornar o stream para o Stremio
+    const streams = [{
+      title: 'Assistir no Superflix',
+      description: 'Fonte externa',
+      externalUrl: streamUrl,
+    }];
+
+    return Promise.resolve({ streams });
+
+  } catch (error) {
+    console.error(`Erro ao buscar stream da Superflix para TMDb ID ${tmdbId}:`, error);
+    return Promise.resolve({ streams: [] });
+  }
 });
 
 // --- SERVIDOR ---
@@ -125,9 +150,8 @@ const PORT = process.env.PORT || 3000;
 serveHTTP(builder.getInterface(), { port: PORT })
   .then(({ url }) => {
     console.log(`Addon rodando em: ${url}`);
-    console.log(`Para deploy, use o link público, como: https://fortal-addon.onrender.com/manifest.json`);
+    console.log(`Para instalar, use o link do seu deploy, como: https://fortal-addon.onrender.com/manifest.json`);
   })
   .catch(err => {
     console.error('Erro ao iniciar o servidor:', err);
   });
-  
