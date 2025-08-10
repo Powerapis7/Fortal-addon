@@ -3,13 +3,13 @@ import { addonBuilder } from 'stremio-addon-sdk';
 import fetch from 'node-fetch';
 
 const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
-const IMAGEM_PADRAO = 'https://i.imgur.com/UH3IPXw.png';
+const IMAGEM_PADRAO = 'https://files.catbox.moe/jwtaje.jpg';
 
 const manifest = {
-  id: 'org.worldecletix.cine',
+  id: 'org.fortal.play',
   version: '1.0.0',
-  name: 'World Ecletix Cine',
-  description: 'Addon TMDb + streaming Superflix',
+  name: 'fortal play',
+  description: 'Addon TMDb + streaming fortal play',
   resources: ['catalog', 'meta'],
   types: ['movie', 'series'],
   catalogs: [
