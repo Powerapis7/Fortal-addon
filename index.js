@@ -1,7 +1,8 @@
-// Usamos 'require' porque 'stremio-addon-sdk' é um módulo CommonJS.
-const sdk = require('stremio-addon-sdk');
+import sdk from 'stremio-addon-sdk';
+import fetch from 'node-fetch';
+
 const { addonBuilder, serveHTTP } = sdk;
-const fetch = require('node-fetch');
+
 
 // Sua chave da API do TMDb
 const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
