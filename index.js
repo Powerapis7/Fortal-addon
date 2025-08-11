@@ -2,10 +2,8 @@
 import sdk from 'stremio-addon-sdk';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
-import express from 'express'; // Precisamos do Express para o proxy
-import { URL } from 'url';
 
-const { addonBuilder } = sdk;
+const { addonBuilder, serveHTTP } = sdk;
 
 // --- CONFIGURAÇÃO ---
 const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
@@ -13,16 +11,26 @@ const PORT = process.env.PORT || 7000;
 
 // --- MANIFEST ---
 const manifest = {
-  id: 'org.fortal.play.superflix.proxy',
-  version: '28.0.0', // A versão com proxy reverso
+  id: 'org.fortal.play.superflix.documentacao',
+  version: '27.0.0', // A versão baseada na documentação oficial
   name: 'Fortal Play (Superflix)',
-  description: 'Addon com proxy reverso para garantir a compatibilidade do player.',
+  description: 'Addon que usa o método correto para tocar links HTTPS no Stremio.',
   logo: 'https://files.catbox.moe/jwtaje.jpg',
   resources: ['catalog', 'stream'],
   types: ['movie', 'series'],
   catalogs: [
-    { type: 'movie', id: 'fortal-search-movies', name: 'Busca Fortal Filmes', extra: [{ name: 'search', isRequired: true }] },
-    { type: 'series', id: 'fortal-search-series', name: 'Busca Fortal Séries', extra: [{ name: 'search', isRequired: true }] }
+    {
+      type: 'movie',
+      id: 'fortal-search-movies',
+      name: 'Busca Fortal Filmes',
+      extra: [{ name: 'search', isRequired: true }]
+    },
+    {
+      type: 'series',
+      id: 'fortal-search-series',
+      name: 'Busca Fortal Séries',
+      extra: [{ name: 'search', isRequired: true }]
+    }
   ],
   idPrefixes: ['tt', 'tmdb:']
 };
@@ -32,7 +40,6 @@ const builder = new addonBuilder(manifest);
 
 // 1. HANDLER DE CATÁLOGO (BUSCA)
 builder.defineCatalogHandler(async ({ type, extra }) => {
-  // ... (código da busca, sem alterações)
   const query = extra?.search;
   if (!query) return Promise.resolve({ metas: [] });
   const tmdbType = type === 'series' ? 'tv' : 'movie';
@@ -45,9 +52,8 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
   } catch (e) { return Promise.resolve({ metas: [] }); }
 });
 
-// 2. HANDLER DE STREAMS (AGORA ELE CRIA O LINK DO NOSSO PROXY)
+// 2. HANDLER DE STREAMS (IMPLEMENTANDO A DOCUMENTAÇÃO)
 builder.defineStreamHandler(async ({ type, id }) => {
-  console.log(`[HANDLER] Iniciando busca de streams para ${id}`);
   let imdbId = id.includes(':') ? id.split(':')[0] : id;
 
   if (imdbId.startsWith('tmdb:')) {
@@ -75,13 +81,15 @@ builder.defineStreamHandler(async ({ type, id }) => {
     const serverElements = $('.player_select_item');
     if (serverElements.length === 0) return Promise.resolve({ streams: [] });
 
-    const streamPromises = serverElements.toArray().map(element => {
+    const streamPromises = [];
+
+    for (const element of serverElements) {
       const serverId = $(element).data('id');
       const serverName = $(element).find('.player_select_name').text().trim();
       
-      if (!serverId || serverId === 'fake-legendado') return null;
+      if (!serverId || serverId === 'fake-legendado') continue;
 
-      return fetch('https://superflixapi.digital/api', {
+      const promise = fetch('https://superflixapi.digital/api', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Cookie': cookies, 'Referer': pageUrl },
         body: `action=getPlayer&video_id=${serverId}`
@@ -89,24 +97,28 @@ builder.defineStreamHandler(async ({ type, id }) => {
       .then(res => res.json())
       .then(data => {
         if (data.message === 'success' && data.data?.video_url) {
-          const finalVideoUrl = data.data.video_url;
-          // CRIA O LINK PARA O NOSSO PROXY
-          const proxyUrl = `/stream/${encodeURIComponent(Buffer.from(finalVideoUrl).toString('base64'))}.mp4`;
-          console.log(`[HANDLER] Link da Superflix obtido. Criando link de proxy: ${proxyUrl}`);
+          // AQUI ESTÁ A IMPLEMENTAÇÃO CORRETA DA DOCUMENTAÇÃO
           return {
             name: 'Fortal Play',
             title: serverName,
-            url: proxyUrl // Entrega o link do nosso addon para o Stremio
+            // 'url' contém o link de vídeo HTTPS
+            url: data.data.video_url,
+            // 'behaviorHints' diz ao Stremio COMO lidar com este link
+            behaviorHints: {
+              // Esta é a chave! Diz ao Stremio para não usar o player de torrents.
+              notWebReady: true
+            }
           };
         }
         return null;
       })
       .catch(() => null);
-    });
+      streamPromises.push(promise);
+    }
 
     const resolvedStreams = await Promise.all(streamPromises);
     const finalStreams = resolvedStreams.filter(stream => stream !== null);
-    console.log(`[HANDLER] Retornando ${finalStreams.length} streams para o Stremio.`);
+
     return Promise.resolve({ streams: finalStreams });
 
   } catch (error) {
@@ -114,57 +126,11 @@ builder.defineStreamHandler(async ({ type, id }) => {
   }
 });
 
-// --- SERVIDOR EXPRESS COM O PROXY ---
-const app = express();
-const addonInterface = builder.getInterface();
-
-// Endpoint do manifest e do addon
-app.get('/manifest.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.send(addonInterface.manifest);
-});
-app.get('/:resource/:type/:id/:extra?.json', (req, res) => {
-  const { resource, type, id, extra } = req.params;
-  const args = { resource, type, id, extra: extra ? JSON.parse(extra) : {} };
-  addonInterface.get(args).then(resp => {
-    res.setHeader('Content-Type', 'application/json');
-    res.send(resp);
-  }).catch(err => {
-    res.status(500).send({ err: 'handler error' });
+// --- INICIALIZAÇÃO DO SERVIDOR ---
+serveHTTP(builder.getInterface(), { port: PORT })
+  .then(() => {
+    console.log(`[INFO] Addon iniciado com sucesso na porta ${PORT}.`);
+  })
+  .catch(err => {
+    console.error(err);
   });
-});
-
-// 3. O ENDPOINT DO PROXY REVERSO
-app.get('/stream/:url.mp4', async (req, res) => {
-  try {
-    const encodedUrl = req.params.url;
-    const finalVideoUrl = Buffer.from(encodedUrl, 'base64').toString('ascii');
-    console.log(`[PROXY] Recebida requisição do Stremio para o link: ${finalVideoUrl}`);
-
-    // Faz a requisição para o link final da Superflix
-    const videoResponse = await fetch(finalVideoUrl, {
-      headers: { 'Referer': 'https://superflixapi.digital/' }
-    });
-
-    if (!videoResponse.ok) {
-      console.error(`[PROXY] Erro ao buscar o vídeo final. Status: ${videoResponse.status}`);
-      return res.status(videoResponse.status).send('Erro no servidor de vídeo');
-    }
-
-    // Retransmite os cabeçalhos (Content-Type, Content-Length, etc.)
-    res.writeHead(videoResponse.status, Object.fromEntries(videoResponse.headers.entries()));
-    // Retransmite o corpo do vídeo (o fluxo de dados)
-    videoResponse.body.pipe(res);
-    console.log(`[PROXY] Retransmitindo fluxo de vídeo para o Stremio...`);
-
-  } catch (error) {
-    console.error('[PROXY] Erro crítico no proxy reverso:', error);
-    res.status(500).send('Erro interno no proxy');
-  }
-});
-
-// Inicia o servidor
-app.listen(PORT, () => {
-  console.log(`[INFO] Addon e Proxy rodando na porta ${PORT}`);
-});
-                                                   
