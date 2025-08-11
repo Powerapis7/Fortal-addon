@@ -5,15 +5,17 @@ import fetch from 'node-fetch';
 const { addonBuilder, serveHTTP } = sdk;
 
 // --- CONFIGURAÇÃO ---
-const API_KEY = '12a263eb78c5a66bf238a09bf48a413b'; // Sua chave do TMDb
+// Usando a chave de API que você forneceu.
+const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
 const PORT = process.env.PORT || 7000;
 
 // --- MANIFEST ---
+// Mudei a versão para '5.0.0' para garantir que o Stremio veja como uma grande atualização.
 const manifest = {
-  id: 'org.fortal.play.final',
-  version: '2.1.0', // Versão final otimizada
+  id: 'org.fortal.play.v5',
+  version: '5.0.0',
   name: 'Fortal Play',
-  description: 'Addon de busca no TMDb com links para o Superflix.',
+  description: 'Addon de busca com links externos para o Superflix.',
   logo: 'https://files.catbox.moe/jwtaje.jpg',
   resources: ['catalog', 'meta', 'stream'],
   types: ['movie', 'series'],
@@ -33,46 +35,55 @@ const manifest = {
   ],
 };
 
-// --- BUILDER E HANDLERS ---
+// --- LÓGICA DO ADDON (HANDLERS) ---
 const builder = new addonBuilder(manifest);
 
 // Handler de Catálogo (Busca)
 builder.defineCatalogHandler(async ({ type, extra }) => {
   const query = extra?.search;
+  console.log(`[LOG] Catálogo: Recebida busca por "${query}" no tipo "${type}".`);
+
   if (!query) {
     return Promise.resolve({ metas: [] });
   }
+
   const tmdbType = type === 'series' ? 'tv' : 'movie';
   const url = `https://api.themoviedb.org/3/search/${tmdbType}?api_key=${API_KEY}&language=pt-BR&query=${encodeURIComponent(query)}`;
+  
   try {
     const res = await fetch(url);
     const data = await res.json();
+
     if (data.success === false) {
+      console.error(`[ERRO] Catálogo: TMDb API retornou um erro: ${data.status_message}`);
       return Promise.resolve({ metas: [] });
     }
+
     const metas = data.results
       .filter(item => item.poster_path)
       .map(item => ({
-        id: `tmdb:${item.id}`, // Nosso addon cria IDs com o prefixo "tmdb:"
+        id: `tmdb:${item.id}`,
         type,
         name: item.title || item.name,
         poster: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
       }));
+    
+    console.log(`[LOG] Catálogo: Retornando ${metas.length} resultados para o Stremio.`);
     return Promise.resolve({ metas });
   } catch (e) {
+    console.error('[ERRO FATAL] Catálogo: Falha na chamada ao TMDb.', e);
     return Promise.resolve({ metas: [] });
   }
 });
 
-// Handler de Metadados
+// Handler de Metadados (Detalhes)
 builder.defineMetaHandler(async ({ type, id }) => {
-  // Só processa se o ID for do nosso formato
-  if (!id.startsWith('tmdb:')) {
-    return Promise.resolve({ meta: null });
-  }
+  if (!id.startsWith('tmdb:')) return Promise.resolve({ meta: null });
+  
   const [_, tmdbId] = id.split(':');
   const tmdbType = type === 'series' ? 'tv' : 'movie';
   const url = `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${API_KEY}&language=pt-BR`;
+
   try {
     const res = await fetch(url);
     const data = await res.json();
@@ -83,27 +94,23 @@ builder.defineMetaHandler(async ({ type, id }) => {
   }
 });
 
-// Handler de Streams
+// Handler de Streams (Links)
 builder.defineStreamHandler(async ({ type, id }) => {
-  // --- A SOLUÇÃO ESTÁ AQUI ---
-  // Ignora qualquer pedido cujo ID não comece com "tmdb:"
-  if (!id.startsWith('tmdb:')) {
-    return Promise.resolve({ streams: [] });
-  }
+  if (!id.startsWith('tmdb:')) return Promise.resolve({ streams: [] });
 
   const [_, tmdbId] = id.split(':');
   const superflixType = type === 'movie' ? 'filme' : 'serie';
+
   try {
     const searchUrl = `https://superflixapi.digital/api/v1/search?tmdb_id=${tmdbId}&type=${superflixType}`;
     const searchResponse = await fetch(searchUrl);
-    if (!searchResponse.ok) {
-      return Promise.resolve({ streams: [] });
-    }
+    if (!searchResponse.ok) return Promise.resolve({ streams: [] });
+
     const searchData = await searchResponse.json();
-    if (!searchData?.slug) {
-      return Promise.resolve({ streams: [] });
-    }
-    const streamUrl = `https://superflix.mov/${superflixType}/${searchData.slug}`;
+    if (!searchData?.slug) return Promise.resolve({ streams: [] });
+
+    const slug = searchData.slug;
+    const streamUrl = `https://superflix.mov/${superflixType}/${slug}`;
     const streams = [{ title: 'Assistir no Fortal Play', externalUrl: streamUrl }];
     return Promise.resolve({ streams });
   } catch (error) {
@@ -111,11 +118,12 @@ builder.defineStreamHandler(async ({ type, id }) => {
   }
 });
 
-// --- SERVIDOR ---
+// --- INICIALIZAÇÃO DO SERVIDOR ---
 serveHTTP(builder.getInterface(), { port: PORT })
   .then(({ url }) => {
-    console.log(`Addon iniciado. Instale em: https://<SEU-APP>.onrender.com/manifest.json`);
+    console.log(`[INFO] Addon iniciado com sucesso na porta ${PORT}.`);
   })
   .catch(err => {
-    console.error('Erro ao iniciar o servidor:', err);
+    console.error(err);
   });
+                  
