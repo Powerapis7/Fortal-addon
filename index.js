@@ -1,7 +1,6 @@
 // Importações
 import sdk from 'stremio-addon-sdk';
 import fetch from 'node-fetch';
-// Cheerio não é mais necessário!
 
 const { addonBuilder, serveHTTP } = sdk;
 
@@ -11,8 +10,8 @@ const PORT = process.env.PORT || 7000;
 
 // --- MANIFEST ---
 const manifest = {
-  id: 'org.fortal.play.superflix.iframe',
-  version: '18.0.0', // Versão final com Iframe
+  id: 'org.fortal.play.superflix.integrado',
+  version: '19.0.0', // Versão com o player integrado
   name: 'Fortal Play (Superflix)',
   description: 'Addon que integra o player da Superflix diretamente no Stremio.',
   logo: 'https://files.catbox.moe/jwtaje.jpg',
@@ -63,18 +62,16 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
   }
 });
 
-// 2. HANDLER DE STREAMS (LÓGICA FINAL COM IFRAME)
+// 2. HANDLER DE STREAMS (LÓGICA FINAL COM IFRAME INTEGRADO)
 builder.defineStreamHandler(async ({ type, id }) => {
   console.log(`[LOG] Stream: Iniciando processo para ID "${id}".`);
   
   let imdbId = id;
 
-  // CORREÇÃO PARA SÉRIES: Pega apenas a parte do ID do IMDb
   if (id.includes(':')) {
       imdbId = id.split(':')[0];
   }
 
-  // Se o ID original era do TMDb, converte para IMDb
   if (imdbId.startsWith('tmdb:')) {
     const tmdbId = imdbId.split(':')[1];
     const findUrl = `https://api.themoviedb.org/3/${type}/${tmdbId}/external_ids?api_key=${API_KEY}`;
@@ -86,25 +83,25 @@ builder.defineStreamHandler(async ({ type, id }) => {
   }
 
   if (!imdbId || !imdbId.startsWith('tt')) {
-    console.log(`[AVISO] ID final inválido: ${imdbId}`);
     return Promise.resolve({ streams: [] });
   }
 
-  // Monta a URL do player da Superflix
   const superflixType = type === 'movie' ? 'filme' : 'serie';
   const playerUrl = `https://superflixapi.digital/${superflixType}/${imdbId}`;
   
   console.log(`[LOG] Montando stream de Iframe para a URL: ${playerUrl}`);
 
-  // Cria o stream do tipo 'iframe'
   const streams = [{
     title: 'Assistir no Fortal Play',
     description: 'Player da Superflix',
-    // 'externalUrl' é usado para dizer ao Stremio para embutir esta página
-    externalUrl: playerUrl,
-    // Dica de comportamento para o Stremio
+    
+    // --- A CORREÇÃO ESTÁ AQUI ---
+    // Usamos 'url' para embutir o player DENTRO do Stremio.
+    url: playerUrl,
+    
     behaviorHints: {
-      // 'notWebReady' pode ajudar na compatibilidade com apps de desktop
+      // 'isFrame' é uma dica adicional de que o conteúdo é uma página web.
+      isFrame: true,
       notWebReady: true
     }
   }];
@@ -120,3 +117,4 @@ serveHTTP(builder.getInterface(), { port: PORT })
   .catch(err => {
     console.error(err);
   });
+    
