@@ -12,7 +12,8 @@
     "node-fetch": "",
     "stremio-addon-sdk": "",
     "express": "",
-    "cheerio": ""
+    "cheerio": "",
+    "express": ""
   },
   "type": "module"
 }
