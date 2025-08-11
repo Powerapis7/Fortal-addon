@@ -1,10 +1,9 @@
 // Importações
 import sdk from 'stremio-addon-sdk';
 import fetch from 'node-fetch';
-import cheerio from 'cheerio'; // Biblioteca para analisar HTML
+import * as cheerio from 'cheerio'; // Import correto para ESM
 
 const { addonBuilder, serveHTTP } = sdk;
-
 // --- CONFIGURAÇÃO ---
 const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
 const PORT = process.env.PORT || 7000;
