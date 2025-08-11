@@ -1,23 +1,24 @@
-// Importações no padrão ES Module
+// Importações
 import sdk from 'stremio-addon-sdk';
 import fetch from 'node-fetch';
 
 const { addonBuilder, serveHTTP } = sdk;
 
 // --- CONFIGURAÇÃO ---
-// Usando a chave de API que você forneceu.
 const API_KEY = '12a263eb78c5a66bf238a09bf48a413b';
 const PORT = process.env.PORT || 7000;
 
-// --- MANIFEST ---
-// Mudei a versão para '5.0.0' para garantir que o Stremio veja como uma grande atualização.
+// --- MANIFEST OTIMIZADO ---
 const manifest = {
-  id: 'org.fortal.play.v5',
-  version: '5.0.0',
-  name: 'Fortal Play',
-  description: 'Addon de busca com links externos para o Superflix.',
+  id: 'org.fortal.play.v6',
+  version: '6.0.0', // Versão final compatível
+  name: 'Fortal Play (Fontes)',
+  description: 'Adiciona fontes de streaming do Superflix aos filmes e séries existentes.',
   logo: 'https://files.catbox.moe/jwtaje.jpg',
-  resources: ['catalog', 'meta', 'stream'],
+  
+  // MUDANÇA CRUCIAL: Removemos 'meta'. Agora o addon só fornece catálogos e streams.
+  resources: ['catalog', 'stream'],
+  
   types: ['movie', 'series'],
   catalogs: [
     {
@@ -33,19 +34,17 @@ const manifest = {
       extra: [{ name: 'search', isRequired: true }]
     }
   ],
+  // Adicionamos 'idPrefixes' para dizer ao Stremio que nosso addon responde a IDs do TMDb.
+  idPrefixes: ['tmdb:']
 };
 
-// --- LÓGICA DO ADDON (HANDLERS) ---
+// --- LÓGICA DO ADDON ---
 const builder = new addonBuilder(manifest);
 
-// Handler de Catálogo (Busca)
+// Handler de Catálogo (Busca) - Permanece o mesmo
 builder.defineCatalogHandler(async ({ type, extra }) => {
   const query = extra?.search;
-  console.log(`[LOG] Catálogo: Recebida busca por "${query}" no tipo "${type}".`);
-
-  if (!query) {
-    return Promise.resolve({ metas: [] });
-  }
+  if (!query) return Promise.resolve({ metas: [] });
 
   const tmdbType = type === 'series' ? 'tv' : 'movie';
   const url = `https://api.themoviedb.org/3/search/${tmdbType}?api_key=${API_KEY}&language=pt-BR&query=${encodeURIComponent(query)}`;
@@ -53,56 +52,37 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
   try {
     const res = await fetch(url);
     const data = await res.json();
-
-    if (data.success === false) {
-      console.error(`[ERRO] Catálogo: TMDb API retornou um erro: ${data.status_message}`);
-      return Promise.resolve({ metas: [] });
-    }
-
     const metas = data.results
       .filter(item => item.poster_path)
       .map(item => ({
-        id: `tmdb:${item.id}`,
+        id: `tmdb:${item.id}`, // O Stremio usará este ID para pedir o stream
         type,
         name: item.title || item.name,
         poster: `https://image.tmdb.org/t/p/w500${item.poster_path}`,
       }));
-    
-    console.log(`[LOG] Catálogo: Retornando ${metas.length} resultados para o Stremio.`);
     return Promise.resolve({ metas });
   } catch (e) {
-    console.error('[ERRO FATAL] Catálogo: Falha na chamada ao TMDb.', e);
     return Promise.resolve({ metas: [] });
   }
 });
 
-// Handler de Metadados (Detalhes)
-builder.defineMetaHandler(async ({ type, id }) => {
-  if (!id.startsWith('tmdb:')) return Promise.resolve({ meta: null });
-  
-  const [_, tmdbId] = id.split(':');
-  const tmdbType = type === 'series' ? 'tv' : 'movie';
-  const url = `https://api.themoviedb.org/3/${tmdbType}/${tmdbId}?api_key=${API_KEY}&language=pt-BR`;
+// --- defineMetaHandler foi REMOVIDO ---
 
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-    const meta = { id, type, name: data.title || data.name, poster: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : null, background: data.backdrop_path ? `https://image.tmdb.org/t/p/original${data.backdrop_path}` : null, description: data.overview };
-    return Promise.resolve({ meta });
-  } catch (e) {
-    return Promise.resolve({ meta: null });
-  }
-});
-
-// Handler de Streams (Links)
+// Handler de Streams (Links) - Permanece o mesmo
 builder.defineStreamHandler(async ({ type, id }) => {
-  if (!id.startsWith('tmdb:')) return Promise.resolve({ streams: [] });
+  // A verificação 'id.startsWith' agora é ainda mais importante.
+  if (!id.startsWith('tmdb:')) {
+    return Promise.resolve({ streams: [] });
+  }
 
+  console.log(`[LOG] Stream: Recebida requisição de link para ${id}.`);
   const [_, tmdbId] = id.split(':');
   const superflixType = type === 'movie' ? 'filme' : 'serie';
 
   try {
     const searchUrl = `https://superflixapi.digital/api/v1/search?tmdb_id=${tmdbId}&type=${superflixType}`;
+    console.log(`[LOG] Stream: Consultando Superflix API em ${searchUrl}`);
+    
     const searchResponse = await fetch(searchUrl);
     if (!searchResponse.ok) return Promise.resolve({ streams: [] });
 
@@ -112,6 +92,8 @@ builder.defineStreamHandler(async ({ type, id }) => {
     const slug = searchData.slug;
     const streamUrl = `https://superflix.mov/${superflixType}/${slug}`;
     const streams = [{ title: 'Assistir no Fortal Play', externalUrl: streamUrl }];
+    
+    console.log(`[LOG] Stream: Link encontrado e retornado: ${streamUrl}`);
     return Promise.resolve({ streams });
   } catch (error) {
     return Promise.resolve({ streams: [] });
@@ -126,4 +108,3 @@ serveHTTP(builder.getInterface(), { port: PORT })
   .catch(err => {
     console.error(err);
   });
-                  
