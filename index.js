@@ -1,6 +1,7 @@
-// Importações
+// Importações - com o import correto do cheerio que você me ensinou
 import sdk from 'stremio-addon-sdk';
 import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
 
 const { addonBuilder, serveHTTP } = sdk;
 
@@ -10,10 +11,10 @@ const PORT = process.env.PORT || 7000;
 
 // --- MANIFEST ---
 const manifest = {
-  id: 'org.fortal.play.superflix.integrado',
-  version: '19.0.0', // Versão com o player integrado
+  id: 'org.fortal.play.superflix.definitivo',
+  version: '21.0.0', // A versão que implementa a lógica correta
   name: 'Fortal Play (Superflix)',
-  description: 'Addon que integra o player da Superflix diretamente no Stremio.',
+  description: 'Busca e fornece links diretos (Dub/Leg) da Superflix.',
   logo: 'https://files.catbox.moe/jwtaje.jpg',
   resources: ['catalog', 'stream'],
   types: ['movie', 'series'],
@@ -62,12 +63,13 @@ builder.defineCatalogHandler(async ({ type, extra }) => {
   }
 });
 
-// 2. HANDLER DE STREAMS (LÓGICA FINAL COM IFRAME INTEGRADO)
+// 2. HANDLER DE STREAMS (A LÓGICA FINAL E CORRETA)
 builder.defineStreamHandler(async ({ type, id }) => {
   console.log(`[LOG] Stream: Iniciando processo para ID "${id}".`);
   
   let imdbId = id;
 
+  // CORREÇÃO PARA SÉRIES: Pega apenas a parte do ID do IMDb
   if (id.includes(':')) {
       imdbId = id.split(':')[0];
   }
@@ -86,27 +88,73 @@ builder.defineStreamHandler(async ({ type, id }) => {
     return Promise.resolve({ streams: [] });
   }
 
-  const superflixType = type === 'movie' ? 'filme' : 'serie';
-  const playerUrl = `https://superflixapi.digital/${superflixType}/${imdbId}`;
-  
-  console.log(`[LOG] Montando stream de Iframe para a URL: ${playerUrl}`);
+  try {
+    // PASSO 1: ACESSAR A PÁGINA HTML
+    const superflixType = type === 'movie' ? 'filme' : 'serie';
+    const pageUrl = `https://superflixapi.digital/${superflixType}/${imdbId}`;
+    console.log(`[LOG] Passo 1: Acessando página HTML em ${pageUrl}`);
+    
+    const pageResponse = await fetch(pageUrl);
+    const html = await pageResponse.text();
 
-  const streams = [{
-    title: 'Assistir no Fortal Play',
-    description: 'Player da Superflix',
-    
-    // --- A CORREÇÃO ESTÁ AQUI ---
-    // Usamos 'url' para embutir o player DENTRO do Stremio.
-    url: playerUrl,
-    
-    behaviorHints: {
-      // 'isFrame' é uma dica adicional de que o conteúdo é uma página web.
-      isFrame: true,
-      notWebReady: true
+    // PASSO 2: ANALISAR O HTML E ENCONTRAR TODOS OS SERVIDORES
+    const $ = cheerio.load(html);
+    const serverElements = $('.player_select_item');
+
+    if (serverElements.length === 0) {
+      return Promise.resolve({ streams: [] });
     }
-  }];
+    console.log(`[LOG] Passo 2: Encontrados ${serverElements.length} servidores na página.`);
 
-  return Promise.resolve({ streams });
+    const streamPromises = [];
+
+    // PASSO 3: PARA CADA SERVIDOR, BUSCAR O LINK DE VÍDEO
+    for (const element of serverElements) {
+      const serverId = $(element).data('id');
+      const serverName = $(element).find('.player_select_name').text().trim();
+      
+      if (!serverId || serverId === 'fake-legendado') continue; // Ignora o legendado beta por enquanto
+
+      const promise = fetch('https://superflixapi.digital/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `action=getPlayer&video_id=${serverId}`
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.data?.video_url) {
+          console.log(`[LOG] SUCESSO! Link obtido para "${serverName}".`);
+          return {
+            title: `Fortal Play (${serverName})`,
+            url: data.data.video_url,
+            behaviorHints: { notWebReady: true }
+          };
+        }
+        return null;
+      })
+      .catch(err => {
+        console.log(`[AVISO] Falha ao processar servidor ${serverId}.`);
+        return null;
+      });
+      streamPromises.push(promise);
+    }
+
+    // PASSO 4: ESPERAR TODAS AS BUSCAS TERMINAREM E FILTRAR OS RESULTADOS
+    const resolvedStreams = await Promise.all(streamPromises);
+    const finalStreams = resolvedStreams.filter(stream => stream !== null); // Remove os que falharam
+
+    if (finalStreams.length === 0) {
+        console.log(`[AVISO] Final: Nenhum link de vídeo válido foi obtido.`);
+        return Promise.resolve({ streams: [] });
+    }
+
+    console.log(`[LOG] Final: Retornando um total de ${finalStreams.length} links diretos para o Stremio.`);
+    return Promise.resolve({ streams: finalStreams });
+
+  } catch (error) {
+    console.error('[ERRO] Falha crítica no processo da Superflix.', error);
+    return Promise.resolve({ streams: [] });
+  }
 });
 
 // --- INICIALIZAÇÃO DO SERVIDOR ---
@@ -117,4 +165,3 @@ serveHTTP(builder.getInterface(), { port: PORT })
   .catch(err => {
     console.error(err);
   });
-    
