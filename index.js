@@ -2,7 +2,7 @@
 import sdk from 'stremio-addon-sdk';
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
-import express from 'express';
+import express from 'express'; // Ainda necessário para tipagem, mas não criamos um novo app
 
 const { addonBuilder, serveHTTP } = sdk;
 
@@ -17,7 +17,7 @@ const cache = new Map();
 // --- MANIFEST ---
 const manifest = {
   id: 'org.fortal.play.superflix.documentacao',
-  version: '0.0.0', // A versão baseada na documentação oficial
+  version: '27.0.0', // A versão baseada na documentação oficial
   name: 'Fortal Play (Superflix)',
   description: 'Addon que usa o método correto para tocar links HTTPS no Stremio.',
   logo: 'https://files.catbox.moe/jwtaje.jpg',
@@ -156,11 +156,9 @@ builder.defineStreamHandler(async ({ type, id }) => {
   }
 });
 
-// --- INICIALIZAÇÃO DO SERVIDOR COM EXPRESS ---
-const app = express();
-
-// Nova rota de proxy
-app.get('/proxy/:serverId', async (req, res) => {
+// Adicione a rota de proxy ao router interno do addon
+const router = builder.getRouter();
+router.get('/proxy/:serverId', async (req, res) => {
   const serverId = req.params.serverId;
   console.log(`[INFO] Requisição de proxy para serverId: ${serverId}`);
 
@@ -220,8 +218,8 @@ app.get('/proxy/:serverId', async (req, res) => {
   }
 });
 
-// Use o app Express no serveHTTP
-serveHTTP(app, { port: PORT })
+// --- INICIALIZAÇÃO DO SERVIDOR ---
+serveHTTP(builder.getInterface(), { port: PORT })
   .then(() => {
     console.log(`[INFO] Addon iniciado com sucesso na porta ${PORT}.`);
   })
