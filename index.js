@@ -12,9 +12,9 @@ const PORT = process.env.PORT || 7000;
 // --- MANIFEST ---
 const manifest = {
   id: 'org.fortal.play.superflix.documentacao',
-  version: '27.0.0', // A versão baseada na documentação oficial
-  name: 'Fortal Play (Superflix)',
-  description: 'Addon que usa o método correto para tocar links HTTPS no Stremio.',
+  version: '1.0.0', // A versão baseada na documentação oficial
+  name: 'Fortal Play',
+  description: 'Addon brasileiro dublado e legendado',
   logo: 'https://files.catbox.moe/jwtaje.jpg',
   resources: ['catalog', 'stream'],
   types: ['movie', 'series'],
@@ -106,7 +106,7 @@ builder.defineStreamHandler(async ({ type, id }) => {
             // 'behaviorHints' diz ao Stremio COMO lidar com este link
             behaviorHints: {
               // Esta é a chave! Diz ao Stremio para não usar o player de torrents.
-              notWebReady: true
+              notWebReady: false
             }
           };
         }
